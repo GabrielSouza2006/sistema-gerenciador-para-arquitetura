@@ -39,18 +39,54 @@ portfolio_digital = [
 # Como mostrado em aula os tamplates são strings para manter o projeto em um único arquivo.
 layout_base_estilo = """
 <style>
-    *{ margin: 0; padding: 0; }
-    body { background-color: #f4f4f4; font-family: 'Verdana', sans-serif; margin: 0; }
-    .header-topo { background-color: #2c3e50; color: white; padding: 30px; text-align: center; border-bottom: 5px solid #e74c3c; }
-    .menu-nav { background: #34495e; padding: 10px; text-align: center; }
-    .menu-nav a { color: white; margin: 0 15px; text-decoration: none; font-weight: bold; }
-    .container { width: 90%; margin: 20px auto; background: white; padding: 20px; border: 1px solid #ccc; min-height: 400px; }
-    .tabela-v3 { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    .tabela-v3 th { background-color: #bdc3c7; padding: 12px; border: 1px solid #7f8c8d; }
-    .tabela-v3 td { padding: 10px; border: 1px solid #bdc3c7; text-align: center; }
-    .btn-acao { background-color: #e74c3c; color: white; border: none; padding: 8px 15px; cursor: pointer; }
-    .rodape { margin-top: 50px; text-align: center; font-size: 11px; color: #777; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background-color: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; }
+    
+    /* Header Estilizado */
+    .header-topo { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; padding: 40px 20px; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+    .header-topo h1 { font-size: 24px; letter-spacing: 1px; text-transform: uppercase; }
+    
+    /* Menu estilo App */
+    .menu-nav { background: #ffffff; padding: 15px; text-align: center; border-bottom: 1px solid #e2e8f0; sticky: top; }
+    .menu-nav a { color: #64748b; margin: 0 15px; text-decoration: none; font-weight: 600; font-size: 14px; transition: 0.3s; padding: 8px 15px; border-radius: 6px; }
+    .menu-nav a:hover { background: #f1f5f9; color: #2563eb; }
+
+    /* Container Card */
+    .container { width: 95%; max-width: 1100px; margin: 30px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); min-height: 450px; }
+    
+    h2 { color: #1e293b; margin-bottom: 20px; font-weight: 700; }
+
+    /* Tabela Estilizada */
+    .tabela-v3 { width: 100%; border-collapse: separate; border-spacing: 0 10px; margin-top: 10px; }
+    .tabela-v3 th { background-color: #f8fafc; color: #64748b; padding: 15px; text-align: center; font-size: 13px; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; }
+    .tabela-v3 td { background-color: #ffffff; padding: 15px; text-align: center; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+    .tabela-v3 tr:hover td { background-color: #f8fafc; }
+
+    /* Botões e Icones */
+    .status-badge { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+
+    .btn-acao { background-color: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s; }
+    .btn-acao:hover { background-color: #dc2626; transform: translateY(-1px); }
+    
+    .btn-confirmar { background-color: #2563eb; color: white; width: 100%; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; margin-top: 10px; }
+    .btn-confirmar:hover { background-color: #1d4ed8; }
+
+    /* Rodapé */
+    .rodape { margin-top: 50px; padding-bottom: 30px; text-align: center; font-size: 12px; color: #94a3b8; }
 </style>
+"""
+
+menu_navegacao = """
+    <div class="header-topo">
+        <h1>GERENCIADOR DE ATIVOS DIGITAIS</h1>
+    </div>
+    
+    <div class="menu-nav">
+        <a href="/">LISTAGEM</a>
+        <a href="/novo_item">CADASTRAR ATIVO</a>
+        <a href="/relatorio">RELATÓRIO</a>
+        <a href="/sobre">SOBRE</a>
+    </div>
 """
 
 html_principal = f"""
@@ -61,16 +97,7 @@ html_principal = f"""
     {layout_base_estilo}
 </head>
 <body>
-    <div class="header-topo">
-        <h1>GERENCIADOR DE ATIVOS DIGITAIS</h1>
-    </div>
-    
-    <div class="menu-nav">
-        <a href="/">LISTAGEM</a> | 
-        <a href="/novo_item">CADASTRAR ATIVO</a> | 
-        <a href="/relatorio">GERAR RELATÓRIO</a> |
-        <a href="/sobre">SOBRE</a> |
-    </div>
+    {menu_navegacao}
 
     <div class="container">
         <center>
@@ -120,6 +147,8 @@ html_form = f"""
     {layout_base_estilo}
 </head>
 <body>
+    {menu_navegacao}
+
     <div class="header-topo">
         <h1>INSERIR NOVO ATIVO</h1>
     </div>
@@ -213,7 +242,7 @@ def info_projeto():
     conteudo = """
     <div style="padding: 30px;">
         <h2>DADOS DO TRABALHO</h2>
-        <p><b>Disciplina:</b> Aplicações Rápidas em Python</p>
+        <p><b>Disciplina:</b> Desenvolvimento Rápido de Aplicações em Python</p>
         <p><b>TEMA:</b> Gerenciamento de Ativos Imobiliários</p>
         <hr>
         <h3>REFERÊNCIAS BIBLIOGRÁFICAS (ABNT2):</h3>
