@@ -28,16 +28,20 @@ HTML5 & CSS3: Interface limpa e funcional.
 🛠️ Como Executar
 Clone o repositório:
 
-```bash
+```
 git clone https://github.com/GabrielSouza2006/sistema-gerenciador-para-arquitetura.git
+```
+
 Instale as dependências:
-
-```bash
+```
 pip install flask
-Execute o servidor:
+```
 
-```bash
+Execute o servidor:
+```
 python app.py
+```
+
 Acesse: http://localhost:5000
 
 📖 Referências Acadêmicas
