@@ -18,6 +18,7 @@ from datetime import datetime
 app = Flask(__name__)
 
 # ------------------------------- BANCO DE DADOS EM MEMÓRIA -------------------------------
+# Lista global que simula um banco de dados temporário (dados se perdem ao reiniciar o servidor)
 portfolio_digital = [
     {
         "registro": "IMG001",
@@ -36,7 +37,8 @@ portfolio_digital = [
 ]
 
 # ------------------------------- BLOCO DE TEMPLATES -------------------------------
-# Como mostrado em aula os tamplates são strings para manter o projeto em um único arquivo.
+# Como mostrado em aula, os templates são strings para manter o projeto em um único arquivo.
+# As chaves duplas {{ }} são usadas para escapar o Jinja2 dentro de f-strings Python.
 layout_base_estilo = """
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -62,14 +64,22 @@ layout_base_estilo = """
     .tabela-v3 td { background-color: #ffffff; padding: 15px; text-align: center; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
     .tabela-v3 tr:hover td { background-color: #f8fafc; }
 
-    /* Botões e Icones */
+    /* Botões de Ação */
     .status-badge { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
 
+    /* Botão REMOVER: vermelho */
     .btn-acao { background-color: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s; }
     .btn-acao:hover { background-color: #dc2626; transform: translateY(-1px); }
+
+    /* Botão EDITAR: laranja, diferenciado visualmente do REMOVER */
+    .btn-editar { background-color: #f59e0b; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s; margin-right: 5px; }
+    .btn-editar:hover { background-color: #d97706; transform: translateY(-1px); }
     
     .btn-confirmar { background-color: #2563eb; color: white; width: 100%; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; margin-top: 10px; }
     .btn-confirmar:hover { background-color: #1d4ed8; }
+
+    /* Campo somente leitura: fundo acinzentado para indicar que não é editável */
+    .campo-readonly { background-color: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
 
     /* Rodapé */
     .rodape { margin-top: 50px; padding-bottom: 30px; text-align: center; font-size: 12px; color: #94a3b8; }
@@ -89,6 +99,7 @@ menu_navegacao = """
     </div>
 """
 
+# Template da página principal - lista todos os ativos cadastrados
 html_principal = f"""
 <!DOCTYPE html>
 <html>
@@ -112,7 +123,7 @@ html_principal = f"""
                         <th>TÉCNICA UTILIZADA</th>
                         <th>DATA</th>
                         <th>STATUS</th>
-                        <th>AÇÃO</th>
+                        <th>AÇÕES</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -123,7 +134,12 @@ html_principal = f"""
                         <td>{{{{ item.tecnica }}}}</td>
                         <td>{{{{ item.data }}}}</td>
                         <td style="color: green;">{{{{ item.status }}}}</td>
-                        <td><a href="/excluir/{{{{ item.registro }}}}"><button class="btn-acao">REMOVER</button></a></td>
+                        <td>
+                            <!-- Botão EDITAR: redireciona para o formulário de edição passando o registro como parâmetro na URL -->
+                            <a href="/editar/{{{{ item.registro }}}}"><button class="btn-editar">EDITAR</button></a>
+                            <!-- Botão REMOVER: redireciona para a rota de exclusão passando o registro como parâmetro na URL -->
+                            <a href="/excluir/{{{{ item.registro }}}}"><button class="btn-acao">REMOVER</button></a>
+                        </td>
                     </tr>
                     {{% endfor %}}
                 </tbody>
@@ -139,6 +155,7 @@ html_principal = f"""
 </html>
 """
 
+# Template do formulário de cadastro de novo ativo
 html_form = f"""
 <!DOCTYPE html>
 <html>
@@ -149,11 +166,11 @@ html_form = f"""
 <body>
     {menu_navegacao}
 
-    <div class="header-topo">
-        <h1>INSERIR NOVO ATIVO</h1>
-    </div>
     <div class="container">
         <center>
+            <h2>INSERIR NOVO ATIVO</h2>
+            <hr width="50%">
+            <br>
             <form action="/adicionar" method="POST" style="width: 50%; text-align: left; padding: 20px; border: 1px solid #eee;">
                 <label>Registro (ID):</label><br>
                 <input type="text" name="reg" style="width: 100%;" required><br><br>
@@ -177,29 +194,83 @@ html_form = f"""
 </html>
 """
 
-# ------------------------------- ROTAS -------------------------------
+# Template do formulário de edição - similar ao de cadastro, mas com campos pré-preenchidos
+# Os valores atuais do ativo são injetados pelo Jinja2 via {{ item.campo }}
+# O campo "Registro" é somente leitura pois é a chave de identificação do ativo
+html_edicao = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EDITAR ATIVO</title>
+    {layout_base_estilo}
+</head>
+<body>
+    {menu_navegacao}
 
+    <div class="container">
+        <center>
+            <h2>EDITAR ATIVO: {{{{ item.registro }}}}</h2>
+            <hr width="50%">
+            <br>
+            <!-- Formulário de edição com dados pré-preenchidos pelo Jinja2 -->
+            <form action="/atualizar" method="POST" style="width: 50%; text-align: left; padding: 20px; border: 1px solid #eee;">
+
+                <!-- Campo oculto (hidden): envia o registro original para identificar qual item atualizar no servidor -->
+                <!-- Sem este campo, a rota /atualizar não saberia qual item da lista modificar -->
+                <input type="hidden" name="reg_original" value="{{{{ item.registro }}}}">
+
+                <label>Registro (ID) — não editável:</label><br>
+                <!-- Readonly: o registro é a chave primária do ativo, não deve ser alterado -->
+                <input type="text" name="reg" value="{{{{ item.registro }}}}" style="width: 100%;" class="campo-readonly" readonly><br><br>
+                
+                <label>Nome do Projeto:</label><br>
+                <!-- value="..." pré-preenche o campo com o dado atual do ativo -->
+                <input type="text" name="proj" value="{{{{ item.projeto }}}}" style="width: 100%;" required><br><br>
+                
+                <label>Técnica (8K, HDR, V-Ray):</label><br>
+                <input type="text" name="tec" value="{{{{ item.tecnica }}}}" style="width: 100%;"><br><br>
+                
+                <label>Status:</label><br>
+                <input type="text" name="st" value="{{{{ item.status }}}}" style="width: 100%;"><br><br>
+                
+                <input type="submit" value="SALVAR ALTERAÇÕES" style="width: 100%; background: #2563eb; color: white; padding: 10px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+            </form>
+            <br>
+            <a href="/">CANCELAR E VOLTAR</a>
+        </center>
+    </div>
+
+    <div class="rodape">
+        <p>Desenvolvido conforme mostrado nas aulas e materiais de apoio.</p>
+        <p>Desenvolvimento Rápido de Aplicações em Python - Fábio de Paula</p>
+    </div>
+</body>
+</html>
+"""
+
+# ------------------------------- ROTAS -------------------------------
+# Rota principal: exibe a listagem de todos os ativos cadastrados
 @app.route('/')
 def rota_inicial():
-    # Passando a lista (simulando o banco de dados) para o template
+    # Passando a lista (simulando o banco de dados) para o template Jinja2
     return render_template_string(html_principal, dados=portfolio_digital)
 
-# Rota para exibir o formulário de cadastro
+# Rota para exibir o formulário de cadastro de novo ativo
 @app.route('/novo_item')
 def tela_adicionar():
     return render_template_string(html_form)
 
-# Rota para adicionar um novo item a lista (simulando inserção no banco de dados) via POST
+# Rota para adicionar um novo item à lista via POST (simulando inserção no banco de dados)
 @app.route('/adicionar', methods=['POST'])
 def processa_adicao():
-    # Coleta de dados manual via formulário
+    # Coleta dos dados enviados pelo formulário via método POST
     reg = request.form.get('reg')
     proj = request.form.get('proj')
     tec = request.form.get('tec')
     st = request.form.get('st')
-    dt = datetime.now().strftime("%Y-%m-%d")
+    dt = datetime.now().strftime("%Y-%m-%d")  # Data de cadastro gerada automaticamente
     
-    # Criando dicionário para inserir na lista
+    # Criando dicionário com os dados para inserir na lista
     novo_objeto = {
         "registro": reg,
         "projeto": proj,
@@ -208,20 +279,61 @@ def processa_adicao():
         "status": st
     }
     
-    # Adicionando na lista global
+    # Adicionando o novo ativo na lista global (simulando INSERT no banco de dados)
     portfolio_digital.append(novo_objeto)
     
-    # Redirecionamento para a página inicial para mostrar o novo item adicionado
+    # Redireciona para a página inicial para mostrar o novo item adicionado
     return redirect(url_for('rota_inicial'))
 
-# Rota para remover um item da lista (simulando remoção no banco de dados)
+# Rota para exibir o formulário de edição pré-preenchido com os dados do ativo
+# Recebe o registro (ID) do ativo como parâmetro dinâmico na URL: /editar/IMG001
+@app.route('/editar/<string:id_reg>')
+def tela_editar(id_reg):
+    # Percorre a lista buscando o ativo com o registro correspondente
+    item_encontrado = None
+    for item in portfolio_digital:
+        if item['registro'] == id_reg:
+            item_encontrado = item
+            break  # Encerra o loop ao encontrar o item
+    
+    # Se o registro não existir na lista, redireciona para a listagem
+    if item_encontrado is None:
+        return redirect(url_for('rota_inicial'))
+    
+    # Passa o ativo encontrado para o template pré-preencher os campos do formulário
+    return render_template_string(html_edicao, item=item_encontrado)
+
+# Rota para processar as alterações enviadas pelo formulário de edição via POST
+@app.route('/atualizar', methods=['POST'])
+def processa_edicao():
+    # Recupera o registro original para localizar o item na lista
+    reg_original = request.form.get('reg_original')
+    
+    # Recupera os novos valores enviados pelo formulário
+    proj = request.form.get('proj')
+    tec = request.form.get('tec')
+    st = request.form.get('st')
+    
+    # Percorre a lista buscando o item pelo registro original (simulando UPDATE no banco de dados)
+    for i in range(len(portfolio_digital)):
+        if portfolio_digital[i]['registro'] == reg_original:
+            # Atualiza apenas os campos editáveis (registro e data são preservados)
+            portfolio_digital[i]['projeto'] = proj
+            portfolio_digital[i]['tecnica'] = tec
+            portfolio_digital[i]['status'] = st
+            break  # Encerra o loop após encontrar e atualizar o item
+    
+    # Redireciona para a listagem para exibir os dados atualizados
+    return redirect(url_for('rota_inicial'))
+
+# Rota para remover um item da lista (simulando DELETE no banco de dados)
 @app.route('/excluir/<string:id_reg>')
 def remover_projeto(id_reg):
-    # Lógica de remoção manual percorrendo a lista
+    # Lógica de remoção manual percorrendo a lista pelo índice
     global portfolio_digital
     for i in range(len(portfolio_digital)):
         if portfolio_digital[i]['registro'] == id_reg:
-            portfolio_digital.pop(i)
+            portfolio_digital.pop(i)  # Remove o elemento pelo índice
             break
     return redirect(url_for('rota_inicial'))
 
@@ -238,7 +350,6 @@ def gerar_relatorio():
 # Rota para exibir informações sobre o projeto e bibliografia
 @app.route('/sobre')
 def info_projeto():
-    # Seção para bibliografia exigida pelo professor
     conteudo = """
     <div style="padding: 30px;">
         <h2>DADOS DO TRABALHO</h2>
@@ -273,4 +384,9 @@ if __name__ == '__main__':
 # 4. Implementado o método POST para segurança de envio de dados.
 # 5. Adicionado loop de busca para remoção de registros.
 # 6. Estilização CSS inline para facilitar a visualização sem arquivos externos.
+# 7. Funcionalidade de edição implementada com duas rotas:
+#    - GET /editar/<id>: exibe o formulário pré-preenchido com os dados atuais.
+#    - POST /atualizar: recebe os dados editados e atualiza o item na lista.
+#    - Campo hidden 'reg_original' é usado para identificar o item a ser atualizado.
+#    - O campo 'registro' é readonly pois funciona como chave primária do ativo.
 # -----------------------------------------------------------------
