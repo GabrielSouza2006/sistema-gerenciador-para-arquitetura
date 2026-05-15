@@ -6,82 +6,91 @@
 # REFERÊNCIAS: 
 # - MENEZES, Nilo Ney C. Introdução à programação com Python. 3. ed.
 # - Documentação Flask: https://flask.palletsprojects.com/
+# - Documentação SQLite3: https://docs.python.org/3/library/sqlite3.html
 # - Material de Aula: SAVA
 # =============================================================================
 
-from flask import Flask, render_template_string, request, redirect, url_for, send_file
-import os
-import io
-import base64
+from flask import Flask, render_template_string, request, redirect, url_for
+import sqlite3
 from datetime import datetime
 
 app = Flask(__name__)
 
-# ------------------------------- BANCO DE DADOS EM MEMÓRIA -------------------------------
-# Lista global que simula um banco de dados temporário (dados se perdem ao reiniciar o servidor)
-portfolio_digital = [
-    {
-        "registro": "IMG001",
-        "projeto": "Residencial Horizonte",
-        "tecnica": "HDR High-End",
-        "data": "2026-03-15",
-        "status": "Aprovado"
-    },
-    {
-        "registro": "IMG002",
-        "projeto": "Corporativo Office",
-        "tecnica": "Renderização V-Ray",
-        "data": "2026-03-20",
-        "status": "Em Edição"
-    }
-]
+# ------------------------------- CONFIGURAÇÃO DO BANCO DE DADOS --------------------------------
+# Nome do arquivo físico do banco de dados SQLite que será criado na pasta do projeto
+DB_FILE = "portfolio_digital.db"
+
+# ------------------------------- FUNÇÕES DE CONEXÃO ----------------------
+
+# Função de conexão
+def conectar_bd():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row  # Permite acessar colunas por nome
+    return conn
+
+def criar_tabela():
+    """Cria a tabela 'ativos' no banco de dados se ela ainda não existir.
+    
+    É chamada uma única vez na inicialização do servidor para garantir
+    que a estrutura do banco esteja pronta antes de qualquer requisição.
+    """
+    conn = conectar_bd()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ativos (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            registro  TEXT    UNIQUE NOT NULL,
+            projeto   TEXT    NOT NULL,
+            tecnica   TEXT,
+            data      TEXT,
+            status    TEXT
+        )
+    """)
+    # Insere registros de exemplo apenas se a tabela estiver vazia
+    cursor.execute("SELECT COUNT(*) FROM ativos")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("""
+            INSERT INTO ativos (registro, projeto, tecnica, data, status)
+            VALUES
+                ('IMG001', 'Residencial Horizonte', 'HDR High-End',       '2026-03-15', 'Aprovado')
+        """)
+    conn.commit()
+    conn.close()
 
 # ------------------------------- BLOCO DE TEMPLATES -------------------------------
-# Como mostrado em aula, os templates são strings para manter o projeto em um único arquivo.
 # As chaves duplas {{ }} são usadas para escapar o Jinja2 dentro de f-strings Python.
 layout_base_estilo = """
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background-color: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; }
-    
-    /* Header Estilizado */
+
     .header-topo { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; padding: 40px 20px; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
     .header-topo h1 { font-size: 24px; letter-spacing: 1px; text-transform: uppercase; }
-    
-    /* Menu estilo App */
-    .menu-nav { background: #ffffff; padding: 15px; text-align: center; border-bottom: 1px solid #e2e8f0; sticky: top; }
+
+    .menu-nav { background: #ffffff; padding: 15px; text-align: center; border-bottom: 1px solid #e2e8f0; }
     .menu-nav a { color: #64748b; margin: 0 15px; text-decoration: none; font-weight: 600; font-size: 14px; transition: 0.3s; padding: 8px 15px; border-radius: 6px; }
     .menu-nav a:hover { background: #f1f5f9; color: #2563eb; }
 
-    /* Container Card */
     .container { width: 95%; max-width: 1100px; margin: 30px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); min-height: 450px; }
-    
+
     h2 { color: #1e293b; margin-bottom: 20px; font-weight: 700; }
 
-    /* Tabela Estilizada */
     .tabela-v3 { width: 100%; border-collapse: separate; border-spacing: 0 10px; margin-top: 10px; }
     .tabela-v3 th { background-color: #f8fafc; color: #64748b; padding: 15px; text-align: center; font-size: 13px; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; }
     .tabela-v3 td { background-color: #ffffff; padding: 15px; text-align: center; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
     .tabela-v3 tr:hover td { background-color: #f8fafc; }
 
-    /* Botões de Ação */
-    .status-badge { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
-
-    /* Botão REMOVER: vermelho */
     .btn-acao { background-color: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s; }
     .btn-acao:hover { background-color: #dc2626; transform: translateY(-1px); }
 
-    /* Botão EDITAR: laranja, diferenciado visualmente do REMOVER */
     .btn-editar { background-color: #f59e0b; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s; margin-right: 5px; }
     .btn-editar:hover { background-color: #d97706; transform: translateY(-1px); }
-    
-    .btn-confirmar { background-color: #2563eb; color: white; width: 100%; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; margin-top: 10px; }
-    .btn-confirmar:hover { background-color: #1d4ed8; }
 
-    /* Campo somente leitura: fundo acinzentado para indicar que não é editável */
     .campo-readonly { background-color: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
 
-    /* Rodapé */
+    .msg-erro    { background: #fee2e2; color: #991b1b; padding: 12px; border-radius: 6px; margin-bottom: 15px; }
+    .msg-sucesso { background: #dcfce7; color: #166534; padding: 12px; border-radius: 6px; margin-bottom: 15px; }
+
     .rodape { margin-top: 50px; padding-bottom: 30px; text-align: center; font-size: 12px; color: #94a3b8; }
 </style>
 """
@@ -90,7 +99,7 @@ menu_navegacao = """
     <div class="header-topo">
         <h1>GERENCIADOR DE ATIVOS DIGITAIS</h1>
     </div>
-    
+
     <div class="menu-nav">
         <a href="/">LISTAGEM</a>
         <a href="/novo_item">CADASTRAR ATIVO</a>
@@ -99,7 +108,7 @@ menu_navegacao = """
     </div>
 """
 
-# Template da página principal - lista todos os ativos cadastrados
+# Template da página principal — lista todos os ativos vindos do SELECT no banco
 html_principal = f"""
 <!DOCTYPE html>
 <html>
@@ -135,9 +144,9 @@ html_principal = f"""
                         <td>{{{{ item.data }}}}</td>
                         <td style="color: green;">{{{{ item.status }}}}</td>
                         <td>
-                            <!-- Botão EDITAR: redireciona para o formulário de edição passando o registro como parâmetro na URL -->
+                            <!-- Botão EDITAR: redireciona para o formulário de edição passando o registro na URL -->
                             <a href="/editar/{{{{ item.registro }}}}"><button class="btn-editar">EDITAR</button></a>
-                            <!-- Botão REMOVER: redireciona para a rota de exclusão passando o registro como parâmetro na URL -->
+                            <!-- Botão REMOVER: executa o DELETE passando o registro como parâmetro na URL -->
                             <a href="/excluir/{{{{ item.registro }}}}"><button class="btn-acao">REMOVER</button></a>
                         </td>
                     </tr>
@@ -156,6 +165,7 @@ html_principal = f"""
 """
 
 # Template do formulário de cadastro de novo ativo
+# A variável 'erro' exibe mensagem de registro duplicado vinda da rota (IntegrityError)
 html_form = f"""
 <!DOCTYPE html>
 <html>
@@ -171,19 +181,23 @@ html_form = f"""
             <h2>INSERIR NOVO ATIVO</h2>
             <hr width="50%">
             <br>
+            <!-- Exibe mensagem de erro se o registro já existir no banco (campo UNIQUE) -->
+            {{% if erro %}}
+            <div class="msg-erro" style="width: 50%;">{{{{ erro }}}}</div>
+            {{% endif %}}
             <form action="/adicionar" method="POST" style="width: 50%; text-align: left; padding: 20px; border: 1px solid #eee;">
                 <label>Registro (ID):</label><br>
                 <input type="text" name="reg" style="width: 100%;" required><br><br>
-                
+
                 <label>Nome do Projeto:</label><br>
                 <input type="text" name="proj" style="width: 100%;" required><br><br>
-                
+
                 <label>Técnica (8K, HDR, V-Ray):</label><br>
                 <input type="text" name="tec" style="width: 100%;"><br><br>
-                
+
                 <label>Status:</label><br>
                 <input type="text" name="st" style="width: 100%;"><br><br>
-                
+
                 <input type="submit" value="CONFIRMAR CADASTRO" style="width: 100%; background: #27ae60; color: white; padding: 10px; border: none;">
             </form>
             <br>
@@ -194,9 +208,8 @@ html_form = f"""
 </html>
 """
 
-# Template do formulário de edição - similar ao de cadastro, mas com campos pré-preenchidos
-# Os valores atuais do ativo são injetados pelo Jinja2 via {{ item.campo }}
-# O campo "Registro" é somente leitura pois é a chave de identificação do ativo
+# Template do formulário de edição, campos pré-preenchidos com os dados do SELECT
+# O campo "Registro" é readonly pois é UNIQUE no banco
 html_edicao = f"""
 <!DOCTYPE html>
 <html>
@@ -212,27 +225,31 @@ html_edicao = f"""
             <h2>EDITAR ATIVO: {{{{ item.registro }}}}</h2>
             <hr width="50%">
             <br>
+            <!-- Exibe mensagem de erro se houver conflito de integridade no banco -->
+            {{% if erro %}}
+            <div class="msg-erro" style="width: 50%;">{{{{ erro }}}}</div>
+            {{% endif %}}
             <!-- Formulário de edição com dados pré-preenchidos pelo Jinja2 -->
             <form action="/atualizar" method="POST" style="width: 50%; text-align: left; padding: 20px; border: 1px solid #eee;">
 
-                <!-- Campo oculto (hidden): envia o registro original para identificar qual item atualizar no servidor -->
-                <!-- Sem este campo, a rota /atualizar não saberia qual item da lista modificar -->
+                <!-- Campo oculto: envia o registro original para o WHERE do UPDATE no banco -->
+                <!-- Sem este campo, o UPDATE não saberia qual linha modificar -->
                 <input type="hidden" name="reg_original" value="{{{{ item.registro }}}}">
 
                 <label>Registro (ID) — não editável:</label><br>
-                <!-- Readonly: o registro é a chave primária do ativo, não deve ser alterado -->
-                <input type="text" name="reg" value="{{{{ item.registro }}}}" style="width: 100%;" class="campo-readonly" readonly><br><br>
-                
+                <!-- Readonly: registro é UNIQUE no banco, alterá-lo quebraria a integridade -->
+                <input type="text" value="{{{{ item.registro }}}}" style="width: 100%;" class="campo-readonly" readonly><br><br>
+
                 <label>Nome do Projeto:</label><br>
-                <!-- value="..." pré-preenche o campo com o dado atual do ativo -->
+                <!-- value="..." pré-preenche o campo com o dado atual vindo do SELECT -->
                 <input type="text" name="proj" value="{{{{ item.projeto }}}}" style="width: 100%;" required><br><br>
-                
+
                 <label>Técnica (8K, HDR, V-Ray):</label><br>
                 <input type="text" name="tec" value="{{{{ item.tecnica }}}}" style="width: 100%;"><br><br>
-                
+
                 <label>Status:</label><br>
                 <input type="text" name="st" value="{{{{ item.status }}}}" style="width: 100%;"><br><br>
-                
+
                 <input type="submit" value="SALVAR ALTERAÇÕES" style="width: 100%; background: #2563eb; color: white; padding: 10px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
             </form>
             <br>
@@ -249,101 +266,132 @@ html_edicao = f"""
 """
 
 # ------------------------------- ROTAS -------------------------------
-# Rota principal: exibe a listagem de todos os ativos cadastrados
+# Rota principal, executa SELECT e passa os resultados para o template de listagem
 @app.route('/')
 def rota_inicial():
-    # Passando a lista (simulando o banco de dados) para o template Jinja2
-    return render_template_string(html_principal, dados=portfolio_digital)
+    conn = conectar_bd()
+    cursor = conn.cursor()
+    # SELECT para buscar todos os ativos cadastrados, ordenados pelo campo registro
+    cursor.execute("SELECT registro, projeto, tecnica, data, status FROM ativos ORDER BY registro")
+    # Converte cada sqlite3.Row para dicionário para o Jinja2 acessar por nome
+    dados = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return render_template_string(html_principal, dados=dados)
 
 # Rota para exibir o formulário de cadastro de novo ativo
 @app.route('/novo_item')
 def tela_adicionar():
-    return render_template_string(html_form)
+    return render_template_string(html_form, erro=None)
 
-# Rota para adicionar um novo item à lista via POST (simulando inserção no banco de dados)
+# Rota para inserir um novo ativo no banco via POST
 @app.route('/adicionar', methods=['POST'])
 def processa_adicao():
     # Coleta dos dados enviados pelo formulário via método POST
-    reg = request.form.get('reg')
+    reg  = request.form.get('reg')
     proj = request.form.get('proj')
-    tec = request.form.get('tec')
-    st = request.form.get('st')
-    dt = datetime.now().strftime("%Y-%m-%d")  # Data de cadastro gerada automaticamente
-    
-    # Criando dicionário com os dados para inserir na lista
-    novo_objeto = {
-        "registro": reg,
-        "projeto": proj,
-        "tecnica": tec,
-        "data": dt,
-        "status": st
-    }
-    
-    # Adicionando o novo ativo na lista global (simulando INSERT no banco de dados)
-    portfolio_digital.append(novo_objeto)
-    
-    # Redireciona para a página inicial para mostrar o novo item adicionado
+    tec  = request.form.get('tec')
+    st   = request.form.get('st')
+    dt   = datetime.now().strftime("%Y-%m-%d")
+
+    conn = conectar_bd()
+    cursor = conn.cursor()
+    try:
+        # Insere o novo ativo na tabela do banco com os dados do formulário (INSERT)
+        cursor.execute("""
+            INSERT INTO ativos (registro, projeto, tecnica, data, status)
+            VALUES (?, ?, ?, ?, ?)
+        """, (reg, proj, tec, dt, st))
+        # Os ? são parâmetros seguros que evitam SQL Injection
+        conn.commit()
+    except sqlite3.IntegrityError:
+        # IntegrityError ocorre quando o campo UNIQUE já existe no banco
+        # Mostra novamente o formulário com mensagem de erro ao invés de travar o sistema
+        conn.close()
+        erro = f"Erro: Já existe um ativo cadastrado com o registro '{reg}'."
+        return render_template_string(html_form, erro=erro)
+    finally:
+        conn.close()
+
     return redirect(url_for('rota_inicial'))
 
 # Rota para exibir o formulário de edição pré-preenchido com os dados do ativo
-# Recebe o registro (ID) do ativo como parâmetro dinâmico na URL: /editar/IMG001
+# Recebe o registro como parâmetro dinâmico na URL
 @app.route('/editar/<string:id_reg>')
 def tela_editar(id_reg):
-    # Percorre a lista buscando o ativo com o registro correspondente
-    item_encontrado = None
-    for item in portfolio_digital:
-        if item['registro'] == id_reg:
-            item_encontrado = item
-            break  # Encerra o loop ao encontrar o item
-    
-    # Se o registro não existir na lista, redireciona para a listagem
-    if item_encontrado is None:
+    conn = conectar_bd()
+    cursor = conn.cursor()
+    # SELECT com WHERE para buscar apenas o ativo com o registro informado na URL
+    cursor.execute(
+        "SELECT registro, projeto, tecnica, data, status FROM ativos WHERE registro = ?",
+        (id_reg,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    # Se o registro não existir no banco, redireciona para a listagem
+    if row is None:
         return redirect(url_for('rota_inicial'))
-    
-    # Passa o ativo encontrado para o template pré-preencher os campos do formulário
-    return render_template_string(html_edicao, item=item_encontrado)
+
+    item = dict(row)
+    return render_template_string(html_edicao, item=item, erro=None)
 
 # Rota para processar as alterações enviadas pelo formulário de edição via POST
 @app.route('/atualizar', methods=['POST'])
 def processa_edicao():
-    # Recupera o registro original para localizar o item na lista
+    # Recupera o registro original para usar no WHERE do UPDATE
     reg_original = request.form.get('reg_original')
-    
+
     # Recupera os novos valores enviados pelo formulário
     proj = request.form.get('proj')
-    tec = request.form.get('tec')
-    st = request.form.get('st')
-    
-    # Percorre a lista buscando o item pelo registro original (simulando UPDATE no banco de dados)
-    for i in range(len(portfolio_digital)):
-        if portfolio_digital[i]['registro'] == reg_original:
-            # Atualiza apenas os campos editáveis (registro e data são preservados)
-            portfolio_digital[i]['projeto'] = proj
-            portfolio_digital[i]['tecnica'] = tec
-            portfolio_digital[i]['status'] = st
-            break  # Encerra o loop após encontrar e atualizar o item
-    
-    # Redireciona para a listagem para exibir os dados atualizados
+    tec  = request.form.get('tec')
+    st   = request.form.get('st')
+
+    conn = conectar_bd()
+    cursor = conn.cursor()
+    try:
+        # UPDATE com WHERE: atualiza apenas os campos editáveis da linha correspondente
+        # O registro e a data originais são preservados
+        cursor.execute("""
+            UPDATE ativos
+            SET projeto = ?, tecnica = ?, status = ?
+            WHERE registro = ?
+        """, (proj, tec, st, reg_original))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        item = {"registro": reg_original, "projeto": proj, "tecnica": tec, "status": st, "data": ""}
+        erro = "Erro ao atualizar o ativo. Verifique os dados e tente novamente."
+        return render_template_string(html_edicao, item=item, erro=erro)
+    finally:
+        conn.close()
+
+    # Redireciona para a listagem após UPDATE bem-sucedido
     return redirect(url_for('rota_inicial'))
 
-# Rota para remover um item da lista (simulando DELETE no banco de dados)
+# Rota para remover um ativo do banco (DELETE)
 @app.route('/excluir/<string:id_reg>')
 def remover_projeto(id_reg):
-    # Lógica de remoção manual percorrendo a lista pelo índice
-    global portfolio_digital
-    for i in range(len(portfolio_digital)):
-        if portfolio_digital[i]['registro'] == id_reg:
-            portfolio_digital.pop(i)  # Remove o elemento pelo índice
-            break
+    conn = conectar_bd()
+    cursor = conn.cursor()
+    # Remove apenas o ativo com o registro informado na URL
+    cursor.execute("DELETE FROM ativos WHERE registro = ?", (id_reg,))
+    conn.commit()
+    conn.close()
     return redirect(url_for('rota_inicial'))
 
-# Rota para gerar um relatório simples dos ativos cadastrados
+# Rota para exibir um relatório simples dos ativos consultando o banco
 @app.route('/relatorio')
 def gerar_relatorio():
-    total = len(portfolio_digital)
+    conn = conectar_bd()
+    cursor = conn.cursor()
+    cursor.execute("SELECT projeto, status FROM ativos ORDER BY registro")
+    ativos = cursor.fetchall()
+    conn.close()
+
+    total = len(ativos)
     corpo = f"<h1>RELATÓRIO DE ATIVOS</h1><p>Total de itens: {total}</p><hr>"
-    for p in portfolio_digital:
-        corpo += f"<p><b>Projeto:</b> {p['projeto']} | <b>Status:</b> {p['status']}</p>"
+    for a in ativos:
+        corpo += f"<p><b>Projeto:</b> {a['projeto']} | <b>Status:</b> {a['status']}</p>"
     corpo += "<br><a href='/'>Voltar</a>"
     return render_template_string(corpo)
 
@@ -354,12 +402,13 @@ def info_projeto():
     <div style="padding: 30px;">
         <h2>DADOS DO TRABALHO</h2>
         <p><b>Disciplina:</b> Desenvolvimento Rápido de Aplicações em Python</p>
-        <p><b>TEMA:</b> Gerenciamento de Ativos Imobiliários</p>
+        <p><b>TEMA:</b> Gerenciamento de Ativos Digitais para Arquitetura</p>
         <hr>
         <h3>REFERÊNCIAS BIBLIOGRÁFICAS (ABNT2):</h3>
         <ul>
             <li>MENEZES, Nilo Ney Coutinho. <b>Introdução à programação com Python:</b> algoritmos e lógica de programação para iniciantes. 3. ed. São Paulo: Novatec, 2019.</li>
             <li>FLASK. <b>Pallets Projects:</b> Documentation. Disponível em: https://flask.palletsprojects.com/. Acesso em: 12 abr. 2026.</li>
+            <li>PYTHON SOFTWARE FOUNDATION. <b>sqlite3 — DB-API 2.0 interface for SQLite databases.</b> Disponível em: https://docs.python.org/3/library/sqlite3.html. Acesso em: 12 abr. 2026.</li>
             <li>ESTÁCIO. <b>Material de Apoio SAVA:</b> Programação com Python.</li>
         </ul>
         <br><br>
@@ -371,22 +420,19 @@ def info_projeto():
 # ------------------------------- EXECUÇÃO FINAL -------------------------------
 
 if __name__ == '__main__':
-    # Mantendo o padrão solicitado de host e port para servidor local
-    print("Iniciando servidor de Portfólio de Imóveis...")
+    # Garante que a tabela existe no banco antes de receber qualquer requisição
+    criar_tabela()
+    print("Iniciando servidor de Portfólio de Ativos Digitais...")
     app.run(debug=True, host='0.0.0.0', port=5000)
 
 # -----------------------------------------------------------------
-# Este bloco serve para documentar a lógica de manutenção do sistema
-# conforme o padrão de estudo do material fornecido.
-# 1. O sistema utiliza listas globais para persistência temporária.
-# 2. As rotas Flask gerenciam o fluxo de requisição (Request/Response).
-# 3. O HTML é renderizado via string para garantir arquivo único (Single File).
-# 4. Implementado o método POST para segurança de envio de dados.
-# 5. Adicionado loop de busca para remoção de registros.
-# 6. Estilização CSS inline para facilitar a visualização sem arquivos externos.
-# 7. Funcionalidade de edição implementada com duas rotas:
-#    - GET /editar/<id>: exibe o formulário pré-preenchido com os dados atuais.
-#    - POST /atualizar: recebe os dados editados e atualiza o item na lista.
-#    - Campo hidden 'reg_original' é usado para identificar o item a ser atualizado.
-#    - O campo 'registro' é readonly pois funciona como chave primária do ativo.
+# Documentação da lógica de manutenção do sistema:
+# 1. Banco de dados SQLite persistente substituiu a lista global em memória.
+# 2. conectar_bd(): row_factory para acesso por nome.
+# 3. criar_tabela() cria a estrutura do banco na inicialização do servidor.
+# 4. Cada rota abre conexão, executa SQL e fecha no bloco finally.
+# 5. try/except IntegrityError trata registros duplicados (campo UNIQUE no banco).
+# 6. dict(row) converte sqlite3.Row para dicionário compatível com Jinja2.
+# 7. Parâmetros ? nas queries SQL evitam SQL Injection.
+# 8. O campo 'registro' é UNIQUE no banco: funciona como chave de negócio do ativo.
 # -----------------------------------------------------------------
